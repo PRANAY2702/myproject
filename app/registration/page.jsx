@@ -168,8 +168,8 @@ const ContestRegistration = () => {
                 throw new Error(errData.error || "Failed to save registration");
             }
 
-            toast.success("Registration Submitted Successfully!", { id: 'reg-submit' });
-            router.push('/profile');
+            toast.success("Registration Successful!");
+window.location.href = '/profile'; // HARD REDIRECT (Forces fresh data fetch)
 
         } catch (error) {
             toast.error(error.message || "Registration failed.", { id: 'reg-submit' });
