@@ -6,7 +6,7 @@ const UserSchema = new mongoose.Schema({
     email: { type: String, required: true },
     role: { type: String, default: 'participant' },
 
-    // Profile Fields (These fix the infinite loop)
+    // Profile Fields
     fullName: { type: String },
     phone: { type: String },
     profession: { type: String },
@@ -16,8 +16,9 @@ const UserSchema = new mongoose.Schema({
     collegeDetails: {
         institutionName: { type: String }
     },
+    registrationCode: { type: String },
 
-    // Registration Fields (From our earlier fixes)
+    // Registration Fields
     type: { type: String, enum: ['single', 'group5', 'group10'], default: 'single' },
     city: { type: String, default: '' },
     groupMembers: [{
@@ -25,24 +26,20 @@ const UserSchema = new mongoose.Schema({
         phone: { type: String },
         college: { type: String }
     }],
-   // models/user.model.js
-import mongoose from 'mongoose';
+    
+    // RENAMED from eventsData to eventsRegistered to match Admin Panel
     eventsRegistered: [{
         eventId: { type: String },
         amountPaid: { type: Number },
         paymentStatus: { type: String, default: 'pending' },
-        requiresAccommodation: { type: Boolean, default: false },
         dayOneAttendance: { type: Boolean, default: false },
         dayTwoAttendance: { type: Boolean, default: false },
         dayTwoAccess: { type: Boolean, default: false },
     }],
 
-    // Keep eventsData temporarily as an empty array to prevent 
-    // the registration page from crashing until you update its POST route.
-    eventsData: { type: Array, default: [] } 
+    totalPaid: { type: Number, default: 0 },
+    paymentStatus: { type: String, default: 'pending' }
 
 }, { timestamps: true });
-
-export default mongoose.models.User || mongoose.model('User', UserSchema);
 
 export default mongoose.models.User || mongoose.model('User', UserSchema);
