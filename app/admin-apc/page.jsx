@@ -877,7 +877,11 @@ function TabBtn({ active, onClick, icon, label, badge }) {
 
 function AttendanceBadge({ present, label }) {
     return (
-        <span className={`px-2.5 py-1.5 rounded-md text-[9px] font-black border ${present ? 'bg-emerald-50 text-emerald-600 border-emerald-200 shadow-sm' : 'bg-gray-50 text-gray-400 border-gray-200'}`}>
+        <span className={`px-2.5 py-1.5 rounded-md text-[9px] font-black border transition-all duration-300 ${
+            present 
+                ? 'bg-emerald-500 text-white border-emerald-600 shadow-sm scale-105' // Active Green State
+                : 'bg-gray-50 text-gray-400 border-gray-200 opacity-50' // Inactive State
+        }`}>
             {label}
         </span>
     );
