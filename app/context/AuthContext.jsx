@@ -1,54 +1,123 @@
-const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validateForm()) return;
+"use client";
 
-    setLoading(true);
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { auth } from '@/lib/firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 
-    try {
-        const currentUser = auth.currentUser;
-        if (!currentUser) throw new Error("No authenticated user found");
-        const token = await currentUser.getIdToken();
+const AuthContext = createContext(undefined);
 
-        const payload = {
-            fullName: formData.fullName,
-            phone: `+91${formData.phone}`, 
-            spectrumAlum: formData.spectrumAlum,
-            profession: formData.profession,
-            dob: formData.dob,
-            collegeDetails: {
-                institutionName: formData.institutionName
-            }
-        };
+export const AuthProvider = ({ children }) => {
+    const [user, setUser] = useState(null);
+    const [profile, setProfile] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [isProfileComplete, setIsProfileComplete] = useState(false);
 
-        const response = await fetch('/api/user/profile', {
-            method: 'PATCH',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
+    const router = useRouter();
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || "Failed to update profile");
+    const fetchUserData = useCallback(async (currentUser) => {
+        if (!currentUser) {
+            setLoading(false);
+            return;
         }
 
-        toast.success("Profile setup complete!");
-        
-        // 1. Force the global context to pull the new DB data
-        await refreshData();
-        
-        // 2. Clear out the stale cache just to be perfectly safe
-        localStorage.removeItem('spectrum_profile');
-        
-        // 3. Trigger the dashboard updates and close the modal
-        if(onComplete) onComplete(); 
-        onClose();
-        
-    } catch (error) {
-        toast.error(error.message || "Failed to update profile");
-    } finally {
-        setLoading(false);
-    }
+        try {
+            const token = await currentUser.getIdToken();
+            const response = await fetch('/api/user/profile', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const profileData = await response.json();
+                setProfile(profileData);
+                
+                const complete = Boolean(
+                    profileData && 
+                    profileData.phone && 
+                    profileData.dob && 
+                    profileData.collegeDetails?.institutionName
+                );
+                
+                setIsProfileComplete(complete);
+                localStorage.setItem('spectrum_profile', JSON.stringify(profileData));
+            } else {
+                setProfile(null);
+            }
+        } catch (error) {
+            console.error("Context fetch error:", error);
+        } finally {
+            setLoading(false); 
+        }
+    }, []);
+
+    useEffect(() => {
+        const cached = localStorage.getItem('spectrum_profile');
+        if (cached) {
+            try {
+                const parsedCache = JSON.parse(cached);
+                setProfile(parsedCache);
+                setIsProfileComplete(Boolean(
+                    parsedCache.phone && 
+                    parsedCache.dob && 
+                    parsedCache.collegeDetails?.institutionName
+                ));
+            } catch (e) {
+                localStorage.removeItem('spectrum_profile');
+            }
+        }
+
+        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            if (firebaseUser) {
+                setUser(firebaseUser);
+                await fetchUserData(firebaseUser);
+            } else {
+                setUser(null);
+                setProfile(null);
+                setIsProfileComplete(false);
+                localStorage.removeItem('spectrum_profile');
+                setLoading(false);
+            }
+        });
+
+        return () => unsubscribe();
+    }, [fetchUserData]);
+
+    const logout = async () => {
+        setLoading(true);
+        try {
+            await signOut(auth);
+            localStorage.removeItem('spectrum_profile');
+            setProfile(null);
+            setUser(null);
+            setIsProfileComplete(false);
+            router.push('/login');
+        } catch (error) {
+            console.error("Logout failed", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <AuthContext.Provider value={{
+            user,
+            profile,
+            loading,
+            isProfileComplete,
+            refreshData: () => fetchUserData(user),
+            logout
+        }}>
+            {children}
+        </AuthContext.Provider>
+    );
+};
+
+export const useLogin = () => {
+    const context = useContext(AuthContext);
+    if (!context) throw new Error("useLogin must be used within an AuthProvider");
+    return context;
 };
