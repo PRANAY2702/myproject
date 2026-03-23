@@ -28,19 +28,25 @@ export async function POST(req) {
     try {
         await dbConnect();
         const authHeader = req.headers.get('Authorization');
-        const token = authHeader?.split('Bearer ')[1];
+        const token = authHeader.split('Bearer ')[1];
         const decodedToken = await admin.auth().verifyIdToken(token);
+        const mongoUser = await User.findOne({ firebaseUid: decodedToken.uid });
 
-        const body = await req.json();
-        const { eventsData, city, type, groupMembers, totalPaid } = body;
+        const { eventsData, city, type, groupMembers, totalPaid } = await req.json();
 
-        // Map the incoming data to include a creation date for the UI
-        const newRegistrations = (eventsData || []).map(event => ({
-            ...event,
-            createdAt: new Date(),
-            paymentStatus: 'pending'
-        }));
+        // 1. Create separate entries in EventRegistration for the Admin APPROVALS tab
+        const registrationPromises = (eventsData || []).map(event => {
+            return EventRegistration.create({
+                userId: mongoUser._id,
+                eventId: event.eventId,
+                amountPaid: event.amountPaid,
+                paymentStatus: 'pending',
+                city: city
+            });
+        });
+        const createdRegs = await Promise.all(registrationPromises);
 
+        // 2. Update the User document for the REGISTRY tab and Profile page
         const updatedUser = await User.findOneAndUpdate(
             { firebaseUid: decodedToken.uid },
             {
@@ -51,13 +57,13 @@ export async function POST(req) {
                     totalPaid: totalPaid || 0,
                     paymentStatus: 'pending' 
                 },
-                // Add the new registrations to the existing array
-                $push: { eventsRegistered: { $each: newRegistrations } }
+                // Store the IDs of the new registrations in the user document
+                $push: { eventsRegistered: { $each: createdRegs } }
             },
-            { new: true, upsert: true }
+            { new: true }
         );
 
-        return NextResponse.json({ success: true, data: updatedUser }, { status: 201 });
+        return NextResponse.json({ success: true }, { status: 201 });
     } catch (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
