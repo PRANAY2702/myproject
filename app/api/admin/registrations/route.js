@@ -20,14 +20,17 @@ export async function GET(request) {
     await requireRole(request, 'admin', 'finance');
 
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status'); // 'pending' | 'verified' | 'failed'
+    const status = searchParams.get('status');
 
     const query = status ? { paymentStatus: status } : {};
     const regs = await EventRegistration.find(query)
       .populate('userId', 'fullName registrationCode')
       .lean();
 
-    return NextResponse.json(regs, { status: 200 });
+    // FILTER OUT NULL USERS: This stops the "reading _id of null" crash on the Approvals tab
+    const validRegistrations = regs.filter(reg => reg.userId !== null);
+
+    return NextResponse.json(validRegistrations, { status: 200 });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
