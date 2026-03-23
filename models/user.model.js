@@ -25,14 +25,24 @@ const UserSchema = new mongoose.Schema({
         phone: { type: String },
         college: { type: String }
     }],
+   // models/user.model.js
+import mongoose from 'mongoose';
     eventsRegistered: [{
         eventId: { type: String },
-        amountPaid: { type: Number }
+        amountPaid: { type: Number },
+        paymentStatus: { type: String, default: 'pending' },
+        requiresAccommodation: { type: Boolean, default: false },
+        dayOneAttendance: { type: Boolean, default: false },
+        dayTwoAttendance: { type: Boolean, default: false },
+        dayTwoAccess: { type: Boolean, default: false },
     }],
-    totalPaid: { type: Number, default: 0 },
-    paymentStatus: { type: String, default: 'pending' },
-    registrationCode: { type: String }
+
+    // Keep eventsData temporarily as an empty array to prevent 
+    // the registration page from crashing until you update its POST route.
+    eventsData: { type: Array, default: [] } 
 
 }, { timestamps: true });
+
+export default mongoose.models.User || mongoose.model('User', UserSchema);
 
 export default mongoose.models.User || mongoose.model('User', UserSchema);
