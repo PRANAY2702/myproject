@@ -5,46 +5,29 @@ import User from '@/models/user.model'; // Change to '@/models/Registration' if 
 export const dynamic = 'force-dynamic';
 export async function POST(req) {
     try {
-        // 1. Verify the Firebase Token securely
-        const authHeader = req.headers.get('Authorization');
+        await dbConnect();
+        
+        // 1. Verify the user securely
+        const authHeader = request.headers.get('Authorization');
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return NextResponse.json({ error: 'Missing or invalid token' }, { status: 401 });
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
         const token = authHeader.split('Bearer ')[1];
         const decodedToken = await admin.auth().verifyIdToken(token);
-        const uid = decodedToken.uid;
 
-        // 2. Connect to MongoDB 
-        if (mongoose.connection.readyState !== 1) {
-            await mongoose.connect(process.env.MONGODB_URI);
+        // 2. Find the user in the database
+        const user = await User.findOne({ firebaseUid: decodedToken.uid });
+
+        if (!user) {
+            return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
-        // 3. Parse the incoming data from the new frontend
-        const body = await req.json();
-        const { eventsData, city, type, groupMembers, totalPaid } = body;
-
-        // 4. Save to Database
-        // Using findOneAndUpdate with upsert: true ensures we update the existing user 
-        // without accidentally wiping out their role or other data.
-        const updatedUser = await User.findOneAndUpdate(
-            { firebaseUid: uid },
-            {
-                $set: {
-                    type: type || 'single',
-                    city: city || '',
-                    groupMembers: groupMembers || [],
-                    eventsData: eventsData || [],
-                    totalPaid: totalPaid || 0,
-                    paymentStatus: 'pending' // Starts pending so the Finance Admin can verify!
-                }
-            },
-            { new: true, upsert: true }
-        );
-
-        return NextResponse.json({ success: true, data: updatedUser }, { status: 201 });
+        // 3. THE FIX: Return the eventsData array exactly as it appears in your screenshot
+        // If they haven't registered, it gracefully returns an empty array []
+        return NextResponse.json(user.eventsData || [], { status: 200 });
 
     } catch (error) {
-        console.error("Registration API Error:", error);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+        console.error("Registrations GET Error:", error);
+        return NextResponse.json({ error: 'Failed to fetch registrations' }, { status: 500 });
     }
 }
