@@ -76,18 +76,29 @@ export default function AdminPanel() {
     useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
             if (!firebaseUser) {
-                router.replace('/');
+                router.replace('/login');
                 return;
             }
             try {
-                const profile = await apiFetch('/api/user');
+                // FIXED PATH: Added /profile to match your actual API route
+                const profile = await apiFetch('/api/user/profile'); 
+                
+                // CRITICAL: Check if role is actually admin before setting user
+                const normalizedRole = profile?.role?.toLowerCase();
+                if (normalizedRole !== 'admin' && normalizedRole !== 'finance' && normalizedRole !== 'registration') {
+                    toast.error("Access Denied: Admin privileges required.");
+                    router.replace('/profile');
+                    return;
+                }
+
                 setCurrentUser(profile);
-            } catch {
-                router.replace('/');
+            } catch (err) {
+                console.error("Admin Auth Error:", err);
+                router.replace('/profile');
             }
         });
         return () => unsubscribe();
-    }, []);
+    }, [router, auth]);
 
     const fetchData = useCallback(async () => {
         if (!currentUser) return;
