@@ -18,10 +18,17 @@ export async function PATCH(request, { params }) {
     await dbConnect();
     await requireRole(request, 'admin', 'finance');
     const { paymentStatus } = await request.json();
+    const { id } = await params;
 
-    const parameters = await params;
-    await EventRegistration.findByIdAndUpdate(parameters.id, { paymentStatus });
-    console.log(`Updated payment status for registration ${parameters.id} to ${paymentStatus}`);
+    // 1. Update the main registration record
+    const reg = await EventRegistration.findByIdAndUpdate(id, { paymentStatus }, { new: true });
+
+    // 2. Sync the status back to the User's embedded array
+    await User.updateOne(
+      { _id: reg.userId, "eventsRegistered._id": id },
+      { $set: { "eventsRegistered.$.paymentStatus": paymentStatus } }
+    );
+
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
