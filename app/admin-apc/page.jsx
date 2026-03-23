@@ -68,7 +68,7 @@ export default function AdminPanel() {
     const [isProcessing, setIsProcessing] = useState(false);
     const scannerRef = useRef(null);
 
-    const userRole = currentUser?.role || 'participant';
+     const userRole = currentUser?.role || 'participant';
     const isAdmin = userRole === 'admin';
     const isFinance = userRole === 'admin' || userRole === 'finance';
     const isRegistration = userRole === 'admin' || userRole === 'registration';
@@ -346,17 +346,18 @@ export default function AdminPanel() {
     };
 
     const dashboardStats = data.reduce((acc, user) => {
-        const headcount = (user.groupMembers && user.groupMembers.length > 0) ? user.groupMembers.length : 1;
+    // Check if groupMembers exists before checking length
+    const headcount = (user?.groupMembers && user.groupMembers.length > 0) ? user.groupMembers.length : 1;
         
-        (user.eventsRegistered || []).forEach(r => {
-            if (r.paymentStatus === 'verified') acc.totalRevenue += Number(r.amountPaid || 0);
-            if (r.eventId === 'canvas_painting') acc.canvasCount += headcount;
-            if (r.eventId === 'totebag_painting') acc.toteCount += headcount;
-            if (r.eventId === 'modelling') acc.modellingCount += headcount;
-            if (r.eventId === 'photography') acc.photoCount += headcount;
-        });
-        return acc;
-    }, { totalRevenue: 0, canvasCount: 0, toteCount: 0, modellingCount: 0, photoCount: 0 });
+        (user?.eventsRegistered || []).forEach(r => {
+        if (r.paymentStatus === 'verified') acc.totalRevenue += Number(r.amountPaid || 0);
+        if (r.eventId === 'canvas_painting') acc.canvasCount += headcount;
+        if (r.eventId === 'totebag_painting') acc.toteCount += headcount;
+        if (r.eventId === 'modelling') acc.modellingCount += headcount;
+        if (r.eventId === 'photography') acc.photoCount += headcount;
+    });
+    return acc;
+}, { totalRevenue: 0, canvasCount: 0, toteCount: 0, modellingCount: 0, photoCount: 0 });
 
     if (!currentUser) return (
         <div className="h-screen flex flex-col items-center justify-center bg-rose-50 text-gray-900 gap-4">
