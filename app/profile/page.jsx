@@ -381,19 +381,24 @@ const UserProfile = () => {
             </div>
 
 <CompleteProfileModal
-    isOpen={isModalOpen}
-    onClose={() => setIsModalOpen(false)}
-    onComplete={async () => {
-        // 1. Force the global AuthContext to fetch the fresh MongoDB profile
-        await refreshData(); 
-        // 2. Fetch the dashboard data (registrations/submissions)
-        fetchDashboardData(); 
-        // 3. Force the modal to close
-        setIsModalOpen(false);
-    }}
-    userId={user.uid}
-    initialName={displayName}
-/>
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onComplete={() => {
+                    // 1. Force close the modal instantly
+                    setIsModalOpen(false);
+                    
+                    // 2. Nuke any cached profile data in local storage
+                    // (Change 'spectrum_profile' if your AuthContext uses a different key!)
+                    localStorage.removeItem('spectrum_profile'); 
+                    localStorage.removeItem('profile');
+                    
+                    // 3. Force a complete, hard refresh of the browser
+                    // This forces AuthContext to boot up from scratch and read the fresh DB!
+                    window.location.reload();
+                }}
+                userId={user.uid}
+                initialName={displayName}
+            />
 
             <NewSubmissionModal
                 isOpen={isSubmitModalOpen}
