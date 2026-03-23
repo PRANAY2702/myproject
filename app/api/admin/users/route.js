@@ -3,6 +3,8 @@ import dbConnect from '@/lib/mongodb';
 import User from '@/models/user.model';
 import admin from '@/lib/firebaseAdmin';
 
+export const dynamic = 'force-dynamic';
+
 async function requireRole(request, ...roles) {
   const authHeader = request.headers.get('authorization') || '';
   const token = authHeader.split(' ')[1];
@@ -16,14 +18,19 @@ async function requireRole(request, ...roles) {
 export async function GET(request) {
   try {
     await dbConnect();
+    // Verify requester is an admin
     await requireRole(request, 'admin');
 
-    const users = await User.find()
-      .populate('eventsRegistered')
-      .lean();
+    // Fetch users. We no longer use .populate() because eventsRegistered 
+    // is an embedded array within the User document.
+    const users = await User.find().lean();
 
     return NextResponse.json(users, { status: 200 });
-  } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: err.message === 'Forbidden' ? 403 : 500 });
+  } catch (error) {
+    console.error("Admin Users GET Error:", error);
+    return NextResponse.json(
+        { error: error.message }, 
+        { status: error.message === 'Forbidden' ? 403 : 500 }
+    );
   }
 }
