@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import admin from '@/lib/firebaseAdmin';
 import User from '@/models/user.model'; // Change to '@/models/Registration' if you use a separate file
-export const dynamic = 'force dynamic';
+export const dynamic = 'force-dynamic';
 export async function POST(req) {
     try {
         // 1. Verify the Firebase Token securely
