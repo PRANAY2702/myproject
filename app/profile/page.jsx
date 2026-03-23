@@ -380,13 +380,20 @@ const UserProfile = () => {
                 </div>
             </div>
 
-            <CompleteProfileModal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                onComplete={fetchDashboardData}
-                userId={user.uid}
-                initialName={displayName}
-            />
+<CompleteProfileModal
+    isOpen={isModalOpen}
+    onClose={() => setIsModalOpen(false)}
+    onComplete={async () => {
+        // 1. Force the global AuthContext to fetch the fresh MongoDB profile
+        await refreshData(); 
+        // 2. Fetch the dashboard data (registrations/submissions)
+        fetchDashboardData(); 
+        // 3. Force the modal to close
+        setIsModalOpen(false);
+    }}
+    userId={user.uid}
+    initialName={displayName}
+/>
 
             <NewSubmissionModal
                 isOpen={isSubmitModalOpen}
