@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import admin from '@/lib/firebaseAdmin';
 import User from '@/models/user.model';
-import EventRegistration from '@/models/eventreg.model'; // CRITICAL IMPORT
+import EventRegistration from '@/models/eventreg.model';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,13 +13,14 @@ export async function POST(req) {
         const token = authHeader?.split('Bearer ')[1];
         const decodedToken = await admin.auth().verifyIdToken(token);
         
-        // Find the Mongo user ID
+        // Find the Mongo user first to get their _id
         const mongoUser = await User.findOne({ firebaseUid: decodedToken.uid });
+        if (!mongoUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
         const body = await req.json();
         const { eventsData, city, type, groupMembers, totalPaid } = body;
 
-        // 1. Create documents in the separate EventRegistration collection for the APPROVALS tab
+        // 1. Create separate documents for the Admin APPROVALS collection
         const registrationPromises = (eventsData || []).map(event => {
             return EventRegistration.create({
                 userId: mongoUser._id,
@@ -31,24 +32,22 @@ export async function POST(req) {
         });
         const createdRegs = await Promise.all(registrationPromises);
 
-        // 2. Update the User document array for the REGISTRY tab and Profile page
-        // Note: We use the IDs from the documents we just created
-        const updatedUser = await User.findOneAndUpdate(
+        // 2. Sync that data into the User's embedded array for the Registry/Profile
+        await User.findOneAndUpdate(
             { firebaseUid: decodedToken.uid },
             {
                 $set: {
                     type: type || 'single',
                     city: city || '',
                     groupMembers: groupMembers || [],
-                    totalPaid: totalPaid || 0,
-                    paymentStatus: 'pending' 
+                    totalPaid: totalPaid || 0
                 },
+                // Add the newly created registration documents into the user array
                 $push: { eventsRegistered: { $each: createdRegs } }
-            },
-            { new: true, upsert: true }
+            }
         );
 
-        return NextResponse.json({ success: true, data: updatedUser }, { status: 201 });
+        return NextResponse.json({ success: true }, { status: 201 });
     } catch (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -63,6 +62,8 @@ export async function GET(request) {
         
         const decodedToken = await admin.auth().verifyIdToken(token);
         const user = await User.findOne({ firebaseUid: decodedToken.uid }).lean();
+
+        // Safe return using optional chaining to prevent null errors
         return NextResponse.json(user?.eventsRegistered || [], { status: 200 });
     } catch (error) {
         return NextResponse.json([], { status: 200 });
