@@ -25,7 +25,7 @@ const UserSchema = new mongoose.Schema({
         phone: { type: String },
         college: { type: String }
     }],
-    eventsData: [{
+    eventsRegistered: [{
         eventId: { type: String },
         amountPaid: { type: Number }
     }],
