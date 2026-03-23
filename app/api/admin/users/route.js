@@ -19,7 +19,7 @@ export async function GET(request) {
     await requireRole(request, 'admin');
 
     const users = await User.find()
-      .populate('eventsRegistered')
+      .populate('eventsData')
       .lean();
 
     return NextResponse.json(users, { status: 200 });
