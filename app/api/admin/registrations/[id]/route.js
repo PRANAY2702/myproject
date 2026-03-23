@@ -4,9 +4,9 @@ import EventRegistration from '@/models/eventreg.model';
 import User from '@/models/user.model';
 import admin from '@/lib/firebaseAdmin';
 
+// Helper to check for admin role
 async function requireRole(request, ...roles) {
   const token = (request.headers.get('authorization') || '').split(' ')[1];
-  if (!token) throw new Error('Unauthorized');
   const decoded = await admin.auth().verifyIdToken(token);
   const caller = await User.findOne({ firebaseUid: decoded.uid }).lean();
   if (!caller || !roles.includes(caller.role)) throw new Error('Forbidden');
@@ -20,10 +20,10 @@ export async function PATCH(request, { params }) {
     const { paymentStatus } = await request.json();
     const { id } = await params;
 
-    // 1. Update the main registration record
+    // 1. Update the record in the EventRegistration collection
     const reg = await EventRegistration.findByIdAndUpdate(id, { paymentStatus }, { new: true });
 
-    // 2. Sync the status back to the User's embedded array
+    // 2. Sync the status back to the User document's array
     await User.updateOne(
       { _id: reg.userId, "eventsRegistered._id": id },
       { $set: { "eventsRegistered.$.paymentStatus": paymentStatus } }
