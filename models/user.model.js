@@ -1,18 +1,24 @@
 import mongoose from 'mongoose';
 
 const UserSchema = new mongoose.Schema({
-    // Your existing core fields
+    // Core Auth Fields
     firebaseUid: { type: String, required: true, unique: true },
-    phone: { type: String },
-    email: { type: String },
-    role: { type: String, default: 'participant' }, // 'admin', 'finance', etc.
+    email: { type: String, required: true },
+    role: { type: String, default: 'participant' },
 
-    // --- NEW SPECTRUM REGISTRATION FIELDS ---
-    type: { 
-        type: String, 
-        enum: ['single', 'group5', 'group10'], 
-        default: 'single' 
+    // Profile Fields (These fix the infinite loop)
+    fullName: { type: String },
+    phone: { type: String },
+    profession: { type: String },
+    dob: { type: String },
+    spectrumAlum: { type: Boolean, default: false },
+    avatarUrl: { type: String },
+    collegeDetails: {
+        institutionName: { type: String }
     },
+
+    // Registration Fields (From our earlier fixes)
+    type: { type: String, enum: ['single', 'group5', 'group10'], default: 'single' },
     city: { type: String, default: '' },
     groupMembers: [{
         name: { type: String },
@@ -24,7 +30,8 @@ const UserSchema = new mongoose.Schema({
         amountPaid: { type: Number }
     }],
     totalPaid: { type: Number, default: 0 },
-    paymentStatus: { type: String, default: 'pending' }
+    paymentStatus: { type: String, default: 'pending' },
+    registrationCode: { type: String }
 
 }, { timestamps: true });
 
