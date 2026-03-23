@@ -81,7 +81,7 @@ export default function AdminPanel() {
             }
             try {
                 // FIXED PATH: Added /profile to match your actual API route
-                const profile = await apiFetch('/api/user/profile'); 
+                const profile = await apiFetch('/api/user/profile');
                 
                 // CRITICAL: Check if role is actually admin before setting user
                 const normalizedRole = profile?.role?.toLowerCase();

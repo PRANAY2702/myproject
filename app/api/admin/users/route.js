@@ -18,12 +18,11 @@ async function requireRole(request, ...roles) {
 export async function GET(request) {
   try {
     await dbConnect();
-    // Verify requester is an admin
     await requireRole(request, 'admin');
 
-    // Fetch users. We no longer use .populate() because eventsRegistered 
-    // is an embedded array within the User document.
-    const users = await User.find().lean();
+    // REMOVE .populate() entirely. 
+    // The data is already inside the user document in the "eventsRegistered" array.
+    const users = await User.find().sort({ createdAt: -1 }).lean();
 
     return NextResponse.json(users, { status: 200 });
   } catch (error) {
