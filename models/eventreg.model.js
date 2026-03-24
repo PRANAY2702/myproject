@@ -16,14 +16,23 @@ const eventRegistrationSchema = new mongoose.Schema({
         enum: ['pending', 'verified', 'failed'],
         default: 'pending',
     },
-    // ADDED: To store the Firebase Storage URL
     paymentScreenshotUrl: {
         type: String,
-        // required: true,
     },
     city: {
         type: String, 
     },
+    // --- NEW FIELDS FOR GROUP REGISTRATIONS ---
+    registrationType: {
+        type: String,
+        default: 'single', // 'single', 'group5', 'group10'
+    },
+    participants: [{
+        fullName: String,
+        phone: String,
+        college: String
+    }],
+    // ------------------------------------------
     dayOneAttendance: {
         type: Boolean,
         default: false,
@@ -50,7 +59,6 @@ const eventRegistrationSchema = new mongoose.Schema({
     },
 }, { timestamps: true });
 
-// Remove the delete block and use this single line:
 const EventRegistration = mongoose.models.EventRegistration || mongoose.model('EventRegistration', eventRegistrationSchema);
 
 module.exports = EventRegistration;

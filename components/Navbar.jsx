@@ -181,7 +181,7 @@ const Navbar = () => {
                                     </div>
                                 ) : (
                                     <Link href="/login" className="px-5 py-2 ml-1 bg-black text-white text-[13px] xl:text-[14px] font-semibold rounded-full hover:bg-gray-800 transition-all shadow-md">
-                                        REGISTER
+                                        REGISTER NOW
                                     </Link>
                                 )}
                             </div>

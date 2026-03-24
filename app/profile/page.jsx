@@ -383,11 +383,7 @@ const UserProfile = () => {
             <CompleteProfileModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
-                onComplete={async () => {
-                    await refreshData();
-                    fetchDashboardData();
-                    setIsModalOpen(false);
-                }}
+                onComplete={fetchDashboardData}
                 userId={user.uid}
                 initialName={displayName}
             />
@@ -452,15 +448,34 @@ const SubmissionCard = ({ sub }) => (
 
 const RegistrationItem = ({ reg }) => {
     const isArt = reg.eventId?.toLowerCase().includes('art');
+    
+    // Determine the ticket type text and color
+    const isGroup10 = reg.registrationType === 'group10';
+    const isGroup5 = reg.registrationType === 'group5';
+    
     return (
-        <div className="bg-white border-[3px] border-black rounded-[1.25rem] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-2px] overflow-hidden">
-            <div className="flex items-center gap-4 overflow-hidden w-full">
+        <div className="bg-white border-[3px] border-black rounded-[1.25rem] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-2px] overflow-hidden relative">
+            
+            {/* NEW: Group Ticket Badge */}
+            {(isGroup5 || isGroup10) && (
+                <div className="absolute top-0 right-0">
+                    <span className={`text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-xl border-b-2 border-l-2 border-black ${isGroup10 ? 'bg-[#F6E245] text-black' : 'bg-[#5AE0FE] text-black'}`}>
+                        {isGroup10 ? 'Group of 10 Ticket' : 'Group of 5 Ticket'}
+                    </span>
+                </div>
+            )}
+
+            <div className={`flex items-center gap-4 overflow-hidden w-full ${ (isGroup5 || isGroup10) ? 'mt-2' : ''}`}>
                 <div className="w-12 h-12 shrink-0 rounded-full flex items-center justify-center bg-black text-white shadow-inner border-2 border-black">
                     {isArt ? <Palette size={20} className="shrink-0" /> : <Camera size={20} className="shrink-0" />}
                 </div>
                 <div className="overflow-hidden w-full">
-                    <h4 className="text-black font-black text-base capitalize uppercase tracking-wide truncate w-full" title={contestMap[reg.eventId]}>{contestMap[reg.eventId]}</h4>
-                    <p className="text-xs text-gray-500 font-bold mt-0.5 truncate w-full">Applied on {new Date(reg.createdAt).toLocaleDateString()}</p>
+                    <h4 className="text-black font-black text-base capitalize uppercase tracking-wide truncate w-full" title={contestMap[reg.eventId]}>
+                        {contestMap[reg.eventId]}
+                    </h4>
+                    <p className="text-xs text-gray-500 font-bold mt-0.5 truncate w-full">
+                        Applied on {new Date(reg.createdAt).toLocaleDateString()}
+                    </p>
                 </div>
             </div>
             <div className="self-start sm:self-auto ml-16 sm:ml-0 shrink-0">

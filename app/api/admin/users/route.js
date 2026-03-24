@@ -3,8 +3,6 @@ import dbConnect from '@/lib/mongodb';
 import User from '@/models/user.model';
 import admin from '@/lib/firebaseAdmin';
 
-export const dynamic = 'force-dynamic';
-
 async function requireRole(request, ...roles) {
   const authHeader = request.headers.get('authorization') || '';
   const token = authHeader.split(' ')[1];
@@ -20,16 +18,12 @@ export async function GET(request) {
     await dbConnect();
     await requireRole(request, 'admin');
 
-    // REMOVE .populate() entirely. 
-    // The data is already inside the user document in the "eventsRegistered" array.
-    const users = await User.find().sort({ createdAt: -1 }).lean();
+    const users = await User.find()
+      .populate('eventsRegistered')
+      .lean();
 
     return NextResponse.json(users, { status: 200 });
-  } catch (error) {
-    console.error("Admin Users GET Error:", error);
-    return NextResponse.json(
-        { error: error.message }, 
-        { status: error.message === 'Forbidden' ? 403 : 500 }
-    );
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: err.message === 'Forbidden' ? 403 : 500 });
   }
 }
