@@ -87,7 +87,7 @@ export default function AdminPanel() {
             }
         });
         return () => unsubscribe();
-    }, [router]);
+    }, []);
 
     const fetchData = useCallback(async () => {
         if (!currentUser) return;
@@ -138,7 +138,7 @@ export default function AdminPanel() {
         } finally {
             setLoading(false);
         }
-    }, [currentUser, router]);
+    }, [currentUser]);
 
     useEffect(() => {
         if (currentUser) fetchData();
