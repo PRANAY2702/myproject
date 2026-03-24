@@ -2,32 +2,31 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/user.model';
 import admin from '@/lib/firebaseAdmin';
-import EventRegistration from '@/models/eventreg.model';
+
+async function requireRole(request, ...roles) {
+  const authHeader = request.headers.get('authorization') || '';
+  const token = authHeader.split(' ')[1];
+  if (!token) throw new Error('Unauthorized');
+  
+  const decoded = await admin.auth().verifyIdToken(token);
+  const user = await User.findOne({ firebaseUid: decoded.uid }).lean();
+  
+  if (!user || !roles.includes(user.role)) throw new Error('Forbidden');
+  return user;
+}
 
 export async function GET(request) {
-    try {
-        await dbConnect();
+  try {
+    await dbConnect();
+    // FIX: Granted access to 'registration' role to cache users for the scanner
+    await requireRole(request, 'admin', 'registration');
 
-        const authHeader = request.headers.get('Authorization');
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+    const users = await User.find()
+      .populate('eventsRegistered')
+      .lean();
 
-        const token = authHeader.split('Bearer ')[1];
-        const decodedToken = await admin.auth().verifyIdToken(token);
-
-        const user = await User.findOne({ firebaseUid: decodedToken.uid })
-            .populate('eventsRegistered')
-            .lean();
-
-        if (!user) {
-            return NextResponse.json({ error: 'User not found' }, { status: 404 });
-        }
-
-        return NextResponse.json(user, { status: 200 });
-
-    } catch (error) {
-        console.error('GET /api/user error:', error);
-        return NextResponse.json({ error: error.message }, { status: 401 });
-    }
+    return NextResponse.json(users, { status: 200 });
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: err.message === 'Forbidden' ? 403 : 500 });
+  }
 }

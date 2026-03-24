@@ -49,14 +49,8 @@ export default function AdminPanel() {
     const [selectedUser, setSelectedUser] = useState(null);
 
     const [filters, setFilters] = useState({
-        modelling: false,
-        canvas_painting: false,
-        totebag_painting: false,
-        photography: false,
-        accommodation: false,
-        day1: false,
-        day2: false,
-        authDay2: false,
+        modelling: false, canvas_painting: false, totebag_painting: false,
+        photography: false, accommodation: false, day1: false, day2: false, authDay2: false,
     });
 
     const [activeDay, setActiveDay] = useState(1);
@@ -64,9 +58,17 @@ export default function AdminPanel() {
     const [isProcessing, setIsProcessing] = useState(false);
     const scannerRef = useRef(null);
 
-    // NEW STATES FOR GROUP SCANNER
     const [scannedGroup, setScannedGroup] = useState(null);
     const [selectedPresentIds, setSelectedPresentIds] = useState([]);
+
+    // FIX: Use refs to avoid stale closures inside the scanner callback
+    const dataRef = useRef([]);
+    const isProcessingRef = useRef(false);
+    const isModalOpenRef = useRef(false);
+
+    useEffect(() => { dataRef.current = data; }, [data]);
+    useEffect(() => { isProcessingRef.current = isProcessing; }, [isProcessing]);
+    useEffect(() => { isModalOpenRef.current = !!scannedGroup; }, [scannedGroup]);
 
     const userRole = currentUser?.role || 'participant';
     const isAdmin = userRole === 'admin';
@@ -108,12 +110,13 @@ export default function AdminPanel() {
             return 'users'; 
         });
 
-        const canAdmin = role === 'admin';
+        // FIX: Allowed Registration role to fetch users so the local array populates
+        const canAdminOrReg = role === 'admin' || role === 'registration';
         const canFinance = role === 'admin' || role === 'finance';
 
         setLoading(true);
         try {
-            if (canAdmin) {
+            if (canAdminOrReg) {
                 const users = await apiFetch('/api/admin/users');
                 setData(users);
             }
@@ -123,7 +126,7 @@ export default function AdminPanel() {
                 setPending(regs);
             }
 
-            if (canAdmin) {
+            if (role === 'admin') {
                 const subs = await apiFetch('/api/admin/submissions');
                 const grouped = subs.reduce((acc, sub) => {
                     const uid = sub.userId?._id || sub.userId;
@@ -144,30 +147,54 @@ export default function AdminPanel() {
         if (currentUser) fetchData();
     }, [currentUser, fetchData]);
 
-    // ── SCANNER FLOW (CHECKLIST) ──────────────────────────────────────────────
+    // FIX: Safely handles scanner states, avoids rigid 10s timeouts
     const handleScanCheck = async (code) => {
-        if (isProcessing || !code) return;
+        if (isProcessingRef.current || !code) return;
         setIsProcessing(true);
+        
         const cleanCode = code.trim().toUpperCase();
         const toastId = toast.loading(`Fetching ID: ${cleanCode}...`);
 
         try {
-            let userDetails = data.find(u => u.registrationCode === cleanCode);
+            // Uses dataRef to ensure it doesn't search an empty array
+            let userDetails = dataRef.current.find(u => u.registrationCode === cleanCode);
             
             if (!userDetails) {
-                userDetails = await apiFetch(`/api/admin/users/by-code/${cleanCode}`);
+                throw new Error("User not found.");
             }
-
-            if (!userDetails) throw new Error("User not found.");
 
             setScannedGroup(userDetails);
             setSelectedPresentIds([]);
             toast.dismiss(toastId);
+
+            // Pause scanner correctly while modal is open
+            if (scannerRef.current && scannerRef.current.getState() === 2) {
+                scannerRef.current.pause(true);
+            }
         } catch (err) {
             toast.error("Invalid QR Code or User not found.", { id: toastId });
+            
+            // Briefly pause on error to avoid rapid-fire scans, then automatically resume
+            if (scannerRef.current && scannerRef.current.getState() === 2) {
+                scannerRef.current.pause(true);
+                setTimeout(() => {
+                    if (scannerRef.current && scannerRef.current.getState() === 3) {
+                        scannerRef.current.resume();
+                    }
+                }, 2000); // 2 second pause instead of 10
+            }
         } finally {
             setIsProcessing(false);
             setManualCode('');
+        }
+    };
+
+    // Helper to close modal and resume camera
+    const closeScannerModal = () => {
+        setScannedGroup(null);
+        setSelectedPresentIds([]);
+        if (scannerRef.current && scannerRef.current.getState() === 3) {
+            scannerRef.current.resume();
         }
     };
 
@@ -202,24 +229,20 @@ export default function AdminPanel() {
             });
 
             toast.success("Attendance successfully recorded!", { id: toastId });
-            setScannedGroup(null);
-            setSelectedPresentIds([]);
+            closeScannerModal();
             fetchData();
         } catch (err) {
             toast.error(err.message || "Failed to mark attendance.", { id: toastId });
         }
     };
 
-    // ── INDIVIDUAL PARTICIPANT QUALIFY TOGGLE ───────────────────────────────
-    // ── INDIVIDUAL PARTICIPANT QUALIFY TOGGLE ───────────────────────────────
     const handleToggleParticipantQualify = async (regId, participantId, newStatus) => {
         const toastId = toast.loading("Updating qualification status...");
         try {
-            // Simplified URL: Just sending to the main registration ID route
             await apiFetch(`/api/admin/registrations/${regId}`, {
                 method: 'PATCH',
                 body: JSON.stringify({ 
-                    participantId: participantId,  // Added inside the body instead of URL
+                    participantId: participantId,
                     isQualifiedDay2: newStatus 
                 }),
             });
@@ -257,14 +280,17 @@ export default function AdminPanel() {
         );
 
         scannerRef.current.render(async (decodedText) => {
-            if (scannerRef.current?.getState() !== 2) return;
-            scannerRef.current?.pause();
+            // FIX: Ignore incoming scans if a modal is open or already processing
+            if (isProcessingRef.current || isModalOpenRef.current) return;
             await handleScanCheck(decodedText);
-            setTimeout(() => { scannerRef.current?.resume(); }, 10000);
         }, () => { });
 
-        return () => { scannerRef.current?.clear().catch(() => { }); };
-    }, [activeTab, activeDay]);
+        return () => { 
+            if (scannerRef.current) {
+                scannerRef.current.clear().catch(() => {});
+            }
+        };
+    }, [activeTab]); // Removed activeDay from dependency to avoid unmounting the camera
 
     async function handleDeleteSubmission(id) {
         if (!window.confirm('Delete this artwork permanently?')) return;
@@ -306,15 +332,10 @@ export default function AdminPanel() {
         }
     }
 
-    const toggleFilter = (key) => {
-        setFilters(prev => ({ ...prev, [key]: !prev[key] }));
-    }
+    const toggleFilter = (key) => setFilters(prev => ({ ...prev, [key]: !prev[key] }));
 
-    // ── Filter logic: SHOWS ONLY VERIFIED REGISTRATIONS ──────────────────────
     const filteredData = data.filter(u => {
         const regs = u.eventsRegistered || [];
-        
-        // Ensure they have at least one verified payment
         const isApproved = regs.some(r => r.paymentStatus === 'verified');
         if (!isApproved) return false;
 
@@ -403,7 +424,6 @@ export default function AdminPanel() {
     return (
         <div className="min-h-screen bg-gradient-to-br from-[#f8fafc] via-[#f1f5f9] to-[#f8fafc] text-gray-900 font-sans selection:bg-rose-200">
 
-            {/* NAV */}
             <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-gray-200/60 p-4 shadow-sm">
                 <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
                     <div className="flex items-center gap-3 w-full md:w-auto">
@@ -429,7 +449,6 @@ export default function AdminPanel() {
 
             <main className="max-w-7xl mx-auto p-4 md:p-8">
 
-                {/* ── SCANNER TAB ── */}
                 {activeTab === 'scanner' && (
                     <div className="max-w-2xl mx-auto space-y-6 md:space-y-8 animate-in zoom-in-95 duration-500">
                         <div className="grid grid-cols-2 gap-2 bg-white p-1.5 rounded-[2rem] border border-gray-200 shadow-sm">
@@ -476,7 +495,6 @@ export default function AdminPanel() {
                     </div>
                 )}
 
-                {/* ── MODERATION TAB ── */}
                 {activeTab === 'moderation' && (
                     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
                         <div className="text-center md:text-left">
@@ -546,7 +564,6 @@ export default function AdminPanel() {
                     </div>
                 )}
 
-                {/* ── REGISTRY TAB ── */}
                 {activeTab === 'users' && (
                     <div className="space-y-6 animate-in fade-in duration-500">
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
@@ -573,7 +590,6 @@ export default function AdminPanel() {
                             </div>
                         </div>
 
-                        {/* FILTER CHIPS */}
                         <div className="bg-white border border-gray-200 p-3 rounded-2xl shadow-sm flex flex-wrap items-center gap-2">
                             <div className="flex items-center gap-2 px-2 border-r border-gray-200 mr-2">
                                 <Filter size={14} className="text-gray-400" />
@@ -589,17 +605,12 @@ export default function AdminPanel() {
                             <FilterChip active={filters.authDay2} onClick={() => toggleFilter('authDay2')} icon={<CheckSquare size={12} />} label="Auth Day 2" colorClass="rose" />
                         </div>
 
-                        {/* STATS */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <StatCard icon={<Banknote size={20} className="text-emerald-500" />} title="Total Revenue" value={`₹${dashboardStats.totalRevenue.toLocaleString('en-IN')}`} subtitle="Verified payments only" bgClass="bg-emerald-50/50" borderClass="border-emerald-100" />
                             <StatCard icon={<Palette size={20} className="text-pink-500" />} title="Total Registrations" value={dashboardStats.canvasCount + dashboardStats.toteCount + dashboardStats.modellingCount + dashboardStats.photoCount} subtitle="Total applications including unverified" bgClass="bg-pink-50/50" borderClass="border-pink-100" />
-                            <StatCard icon={<Palette size={20} className="text-pink-500" />} title="Painting Registrations" value={dashboardStats.canvasCount} subtitle="Total applications including unverified" bgClass="bg-pink-50/50" borderClass="border-pink-100" />
-                            <StatCard icon={<Palette size={20} className="text-pink-500" />} title="Tote Bag Painting Registrations" value={dashboardStats.toteCount} subtitle="Total applications including unverified" bgClass="bg-pink-50/50" borderClass="border-pink-100" />
-                            <StatCard icon={<Palette size={20} className="text-pink-500" />} title="Modelling Registrations" value={dashboardStats.modellingCount} subtitle="Total applications including unverified" bgClass="bg-pink-50/50" borderClass="border-pink-100" />
                             <StatCard icon={<Camera size={20} className="text-blue-500" />} title="Photo Registrations" value={dashboardStats.photoCount} subtitle="Total applications including unverified" bgClass="bg-blue-50/50" borderClass="border-blue-100" />
                         </div>
 
-                        {/* TABLE */}
                         <div className="bg-white border border-gray-200 rounded-[2rem] shadow-sm overflow-hidden">
                             <div className="overflow-x-auto">
                                 {loading ? (
@@ -707,7 +718,6 @@ export default function AdminPanel() {
                     </div>
                 )}
 
-                {/* ── APPROVALS TAB ── */}
                 {activeTab === 'verify' && (
                     <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
                         <div className="text-center md:text-left">
@@ -738,7 +748,6 @@ export default function AdminPanel() {
                                             <div className="mb-4 sm:mb-0">
                                                 <h3 className="font-black text-lg text-gray-900">{reg.userId?.fullName}</h3>
                                                 <p className="text-[10px] font-black uppercase text-rose-500 tracking-[0.2em]">{reg.eventId} CATEGORY</p>
-                                                <p className="text-[10px] text-gray-500 font-bold mt-1.5 uppercase tracking-widest bg-gray-50 w-fit px-2 py-1 rounded-md border border-gray-100">{reg.city || 'Location Unknown'}</p>
                                             </div>
                                             <div className="flex gap-2">
                                                 <button onClick={() => handleApprove(reg._id, 'verified')} className="flex-1 bg-gray-900 text-white py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-sm active:scale-95">Approve</button>
@@ -753,12 +762,10 @@ export default function AdminPanel() {
                 )}
             </main>
 
-            {/* ── SCANNED GROUP ATTENDANCE MODAL ── */}
             {scannedGroup && (() => {
                 const regs = scannedGroup.eventsRegistered || [];
                 const groupReg = regs.find(r => r.registrationType === 'group5' || r.registrationType === 'group10');
                 const isGroup = !!groupReg;
-                // Add fallback `|| []` to ensure mapping never crashes if data is missing
                 const members = isGroup ? (groupReg.participants || []) : [{
                     _id: scannedGroup._id,
                     fullName: scannedGroup.fullName,
@@ -796,7 +803,7 @@ export default function AdminPanel() {
                             </div>
 
                             <div className="flex gap-3 mt-auto shrink-0">
-                                <button onClick={() => setScannedGroup(null)} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl text-xs font-black uppercase hover:bg-gray-200 transition-colors">Cancel</button>
+                                <button onClick={closeScannerModal} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl text-xs font-black uppercase hover:bg-gray-200 transition-colors">Cancel</button>
                                 <button onClick={submitGroupAttendance} className="flex-1 py-3 bg-rose-500 text-white rounded-xl text-xs font-black uppercase shadow-md hover:bg-rose-600 transition-colors">Confirm Entry</button>
                             </div>
                         </div>
@@ -804,12 +811,10 @@ export default function AdminPanel() {
                 );
             })()}
 
-            {/* ── USER INSPECTOR MODAL ── */}
             {selectedUser && (() => {
                 const regs = selectedUser.eventsRegistered || [];
                 const groupReg = regs.find(r => r.registrationType === 'group10' || r.registrationType === 'group5');
                 const isGroup = !!groupReg;
-                // Safe fallback for legacy entries
                 const participants = groupReg?.participants || [];
                 
                 return (
@@ -842,7 +847,6 @@ export default function AdminPanel() {
                                     </div>
                                 </div>
 
-                                {/* GROUP ROSTER WITH QUALIFY BUTTONS */}
                                 {isGroup ? (
                                     <div className="mb-6 bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
                                         <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-4 flex items-center gap-2">
@@ -905,7 +909,6 @@ export default function AdminPanel() {
                                     )}
                                 </div>
 
-                                {/* DAY 2 SELECT FOR SINGLE USERS ONLY */}
                                 {isAdmin && !isGroup && (
                                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 md:p-6 bg-gray-50 border border-gray-200 rounded-2xl shadow-sm">
                                         <div>
@@ -928,8 +931,6 @@ export default function AdminPanel() {
         </div>
     );
 }
-
-// ── Helper Components ─────────────────────────────────────────────────────────
 
 function FilterChip({ active, onClick, icon, label, colorClass = 'gray' }) {
     const activeClass = colorClass === 'rose'
