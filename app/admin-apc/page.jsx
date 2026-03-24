@@ -38,6 +38,7 @@ export default function AdminPanel() {
     const [manualCode, setManualCode] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const scannerRef = useRef(null);
+    const hasFetched = useRef(false);
 
     const [scannedGroup, setScannedGroup] = useState(null);
     const [selectedPresentIds, setSelectedPresentIds] = useState([]);
@@ -119,7 +120,9 @@ export default function AdminPanel() {
         if (!authLoading) {
             if (!user || (profile && profile.role === 'participant')) {
                 router.replace('/');
-            } else if (profile) {
+            } else if (profile && !hasFetched.current) {
+                // This ensures the fetch only happens EXACTLY once!
+                hasFetched.current = true;
                 fetchData();
             }
         }
@@ -360,7 +363,7 @@ export default function AdminPanel() {
         return acc;
     }, { totalRevenue: 0, canvasCount: 0, toteCount: 0, modellingCount: 0, photoCount: 0 });
 
-    if (authLoading || (profile && loading && activeTab === null)) return (
+    if (authLoading || (loading && !hasFetched.current)) return (
         <div className="h-screen flex flex-col items-center justify-center bg-rose-50 text-gray-900 gap-4">
             <Loader2 className="animate-spin text-rose-500 w-10" />
             <p className="text-rose-500 uppercase tracking-widest text-[10px] font-black">Syncing Credentials</p>
