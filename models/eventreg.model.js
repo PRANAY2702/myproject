@@ -27,10 +27,15 @@ const eventRegistrationSchema = new mongoose.Schema({
         type: String,
         default: 'single', // 'single', 'group5', 'group10'
     },
+    // Inside eventreg.model.js
     participants: [{
         fullName: String,
         phone: String,
-        college: String
+        college: String,
+        // Add these new fields:
+        isPresentDay1: { type: Boolean, default: false },
+        isPresentDay2: { type: Boolean, default: false },
+        isQualifiedDay2: { type: Boolean, default: false } 
     }],
     // ------------------------------------------
     dayOneAttendance: {
