@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { getAuth } from 'firebase/auth';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { useLogin } from '@/app/context/AuthContext'; // Using your stable context!
 import {
     ShieldCheck, Search, Loader2, CheckCircle, XCircle,
     Camera, Users, CreditCard, Eye, GraduationCap,
@@ -13,14 +13,33 @@ import {
     Download, Filter, Home, CheckSquare, UserCircle
 } from 'lucide-react';
 
+async function getAuthHeaders() {
+    const auth = getAuth();
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) throw new Error('Not authenticated');
+    return {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+    };
+}
+
+async function apiFetch(url, options = {}) {
+    const headers = await getAuthHeaders();
+    const res = await fetch(url, { ...options, headers: { ...headers, ...(options.headers || {}) } });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || 'API error');
+    }
+    return res.json();
+}
+
 export default function AdminPanel() {
     const router = useRouter();
-    
-    // Pull stable auth state from Context instead of raw Firebase calls
-    const { user, profile, loading: authLoading } = useLogin();
+    const auth = getAuth();
 
     const [activeTab, setActiveTab] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [currentUser, setCurrentUser] = useState(null);
 
     const [data, setData] = useState([]);
     const [pending, setPending] = useState([]);
@@ -30,48 +49,52 @@ export default function AdminPanel() {
     const [selectedUser, setSelectedUser] = useState(null);
 
     const [filters, setFilters] = useState({
-        modelling: false, canvas_painting: false, totebag_painting: false,
-        photography: false, accommodation: false, day1: false, day2: false, authDay2: false,
+        modelling: false,
+        canvas_painting: false,
+        totebag_painting: false,
+        photography: false,
+        accommodation: false,
+        day1: false,
+        day2: false,
+        authDay2: false,
     });
 
     const [activeDay, setActiveDay] = useState(1);
     const [manualCode, setManualCode] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const scannerRef = useRef(null);
-    const hasFetched = useRef(false);
 
+    // NEW STATES FOR GROUP SCANNER
     const [scannedGroup, setScannedGroup] = useState(null);
     const [selectedPresentIds, setSelectedPresentIds] = useState([]);
 
-    const userRole = profile?.role || 'participant';
+    const userRole = currentUser?.role || 'participant';
     const isAdmin = userRole === 'admin';
     const isFinance = userRole === 'admin' || userRole === 'finance';
     const isRegistration = userRole === 'admin' || userRole === 'registration';
 
-    // Safe API Fetcher using the Context User Token
-    const apiFetch = useCallback(async (url, options = {}) => {
-        if (!user) throw new Error('Not authenticated');
-        const token = await user.getIdToken();
-        const res = await fetch(url, { 
-            ...options, 
-            headers: { 
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-                ...(options.headers || {}) 
-            } 
+    useEffect(() => {
+        const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
+            if (!firebaseUser) {
+                router.replace('/');
+                return;
+            }
+            try {
+                const profile = await apiFetch('/api/user');
+                setCurrentUser(profile);
+            } catch {
+                router.replace('/');
+            }
         });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: res.statusText }));
-            throw new Error(err.error || 'API error');
-        }
-        return res.json();
-    }, [user]);
+        return () => unsubscribe();
+    }, [router]);
 
-    // Data Fetching Logic
     const fetchData = useCallback(async () => {
-        if (!profile) return;
+        if (!currentUser) return;
 
-        const role = (profile.role || 'participant').toLowerCase();
+        const rawRole = currentUser.role || 'participant';
+        const role = rawRole.toLowerCase();
+
         if (role === 'participant') {
             router.replace('/');
             return;
@@ -94,10 +117,12 @@ export default function AdminPanel() {
                 const users = await apiFetch('/api/admin/users');
                 setData(users);
             }
+
             if (canFinance) {
                 const regs = await apiFetch('/api/admin/registrations?status=pending');
                 setPending(regs);
             }
+
             if (canAdmin) {
                 const subs = await apiFetch('/api/admin/submissions');
                 const grouped = subs.reduce((acc, sub) => {
@@ -113,21 +138,11 @@ export default function AdminPanel() {
         } finally {
             setLoading(false);
         }
-    }, [profile, apiFetch, router]);
+    }, [currentUser, router]);
 
-    // Master Bootloader - Waits for AuthContext
     useEffect(() => {
-        if (!authLoading) {
-            if (!user || (profile && profile.role === 'participant')) {
-                router.replace('/');
-            } else if (profile && !hasFetched.current) {
-                // This ensures the fetch only happens EXACTLY once!
-                hasFetched.current = true;
-                fetchData();
-            }
-        }
-    }, [authLoading, user, profile, fetchData, router]);
-
+        if (currentUser) fetchData();
+    }, [currentUser, fetchData]);
 
     // ── SCANNER FLOW (CHECKLIST) ──────────────────────────────────────────────
     const handleScanCheck = async (code) => {
@@ -138,9 +153,11 @@ export default function AdminPanel() {
 
         try {
             let userDetails = data.find(u => u.registrationCode === cleanCode);
+            
             if (!userDetails) {
                 userDetails = await apiFetch(`/api/admin/users/by-code/${cleanCode}`);
             }
+
             if (!userDetails) throw new Error("User not found.");
 
             setScannedGroup(userDetails);
@@ -284,10 +301,15 @@ export default function AdminPanel() {
         }
     }
 
-    const toggleFilter = (key) => setFilters(prev => ({ ...prev, [key]: !prev[key] }));
+    const toggleFilter = (key) => {
+        setFilters(prev => ({ ...prev, [key]: !prev[key] }));
+    }
 
+    // ── Filter logic: SHOWS ONLY VERIFIED REGISTRATIONS ──────────────────────
     const filteredData = data.filter(u => {
         const regs = u.eventsRegistered || [];
+        
+        // Ensure they have at least one verified payment
         const isApproved = regs.some(r => r.paymentStatus === 'verified');
         if (!isApproved) return false;
 
@@ -347,7 +369,10 @@ export default function AdminPanel() {
         });
         const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
-        const a = Object.assign(document.createElement('a'), { href: url, download: `Spectrum_Registry_${new Date().toISOString().split('T')[0]}.csv` });
+        const a = Object.assign(document.createElement('a'), {
+            href: url,
+            download: `Spectrum_Registry_${new Date().toISOString().split('T')[0]}.csv`,
+        });
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -363,7 +388,7 @@ export default function AdminPanel() {
         return acc;
     }, { totalRevenue: 0, canvasCount: 0, toteCount: 0, modellingCount: 0, photoCount: 0 });
 
-    if (authLoading || (loading && !hasFetched.current)) return (
+    if (!currentUser) return (
         <div className="h-screen flex flex-col items-center justify-center bg-rose-50 text-gray-900 gap-4">
             <Loader2 className="animate-spin text-rose-500 w-10" />
             <p className="text-rose-500 uppercase tracking-widest text-[10px] font-black">Syncing Credentials</p>
@@ -728,6 +753,7 @@ export default function AdminPanel() {
                 const regs = scannedGroup.eventsRegistered || [];
                 const groupReg = regs.find(r => r.registrationType === 'group5' || r.registrationType === 'group10');
                 const isGroup = !!groupReg;
+                // Add fallback `|| []` to ensure mapping never crashes if data is missing
                 const members = isGroup ? (groupReg.participants || []) : [{
                     _id: scannedGroup._id,
                     fullName: scannedGroup.fullName,
@@ -778,6 +804,7 @@ export default function AdminPanel() {
                 const regs = selectedUser.eventsRegistered || [];
                 const groupReg = regs.find(r => r.registrationType === 'group10' || r.registrationType === 'group5');
                 const isGroup = !!groupReg;
+                // Safe fallback for legacy entries
                 const participants = groupReg?.participants || [];
                 
                 return (
