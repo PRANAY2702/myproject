@@ -4,26 +4,59 @@ import EventRegistration from '@/models/eventreg.model';
 import User from '@/models/user.model';
 import admin from '@/lib/firebaseAdmin';
 
-async function requireRole(request, ...roles) {
-  const token = (request.headers.get('authorization') || '').split(' ')[1];
-  if (!token) throw new Error('Unauthorized');
-  const decoded = await admin.auth().verifyIdToken(token);
-  const caller = await User.findOne({ firebaseUid: decoded.uid }).lean();
-  if (!caller || !roles.includes(caller.role)) throw new Error('Forbidden');
-  return caller;
-}
+export async function PATCH(req, props) {
+    try {
+        await dbConnect();
 
-export async function PATCH(request, { params }) {
-  try {
-    await dbConnect();
-    await requireRole(request, 'admin', 'finance');
-    const { paymentStatus } = await request.json();
+        // 1. Verify Admin Auth
+        const authHeader = req.headers.get('authorization');
+        if (!authHeader) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        const token = authHeader.split(' ')[1];
+        const decodedToken = await admin.auth().verifyIdToken(token);
 
-    const parameters = await params;
-    await EventRegistration.findByIdAndUpdate(parameters.id, { paymentStatus });
-    console.log(`Updated payment status for registration ${parameters.id} to ${paymentStatus}`);
-    return NextResponse.json({ success: true }, { status: 200 });
-  } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
+        const adminUser = await User.findOne({ firebaseUid: decodedToken.uid });
+        if (!adminUser || (adminUser.role !== 'admin' && adminUser.role !== 'finance')) {
+            return NextResponse.json({ error: "Forbidden access" }, { status: 403 });
+        }
+
+        // 2. Safely extract the ID
+        const params = await props.params;
+        const { id } = params;
+
+        const body = await req.json();
+
+        // --- SCENARIO A: QUALIFY A SPECIFIC GROUP PARTICIPANT ---
+        if (body.participantId && body.isQualifiedDay2 !== undefined) {
+            const updatedReg = await EventRegistration.findOneAndUpdate(
+                { _id: id, "participants._id": body.participantId },
+                { $set: { "participants.$.isQualifiedDay2": body.isQualifiedDay2 } },
+                { new: true }
+            );
+
+            if (!updatedReg) {
+                return NextResponse.json({ error: "Registration or Participant not found" }, { status: 404 });
+            }
+            return NextResponse.json({ success: true, message: "Participant qualification updated" }, { status: 200 });
+        }
+
+        // --- SCENARIO B: APPROVE/REJECT PAYMENT STATUS ---
+        if (body.paymentStatus) {
+            const updatedReg = await EventRegistration.findByIdAndUpdate(
+                id,
+                { paymentStatus: body.paymentStatus },
+                { new: true }
+            );
+
+            if (!updatedReg) {
+                return NextResponse.json({ error: "Registration not found" }, { status: 404 });
+            }
+            return NextResponse.json({ success: true, message: "Payment status updated" }, { status: 200 });
+        }
+
+        return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+
+    } catch (error) {
+        console.error("Registration PATCH API Error:", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 }

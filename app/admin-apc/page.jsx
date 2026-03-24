@@ -211,12 +211,17 @@ export default function AdminPanel() {
     };
 
     // ── INDIVIDUAL PARTICIPANT QUALIFY TOGGLE ───────────────────────────────
+    // ── INDIVIDUAL PARTICIPANT QUALIFY TOGGLE ───────────────────────────────
     const handleToggleParticipantQualify = async (regId, participantId, newStatus) => {
         const toastId = toast.loading("Updating qualification status...");
         try {
-            await apiFetch(`/api/admin/registrations/${regId}/participants/${participantId}`, {
+            // Simplified URL: Just sending to the main registration ID route
+            await apiFetch(`/api/admin/registrations/${regId}`, {
                 method: 'PATCH',
-                body: JSON.stringify({ isQualifiedDay2: newStatus }),
+                body: JSON.stringify({ 
+                    participantId: participantId,  // Added inside the body instead of URL
+                    isQualifiedDay2: newStatus 
+                }),
             });
             toast.success("Participant status updated!", { id: toastId });
             fetchData(); 
