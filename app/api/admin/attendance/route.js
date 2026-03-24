@@ -1,90 +1,65 @@
+
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/user.model';
 import EventRegistration from '@/models/eventreg.model';
 import admin from '@/lib/firebaseAdmin';
 
-export async function PATCH(req) {
-    try {
-        await dbConnect();
+async function requireRole(request, ...roles) {
+  const token = (request.headers.get('authorization') || '').split(' ')[1];
+  if (!token) throw new Error('Unauthorized');
+  const decoded = await admin.auth().verifyIdToken(token);
+  const caller = await User.findOne({ firebaseUid: decoded.uid }).lean();
+  if (!caller || !roles.includes(caller.role)) throw new Error('Forbidden');
+  return caller;
+}
 
-        // 1. Verify Admin Auth
-        const authHeader = req.headers.get('authorization');
-        if (!authHeader) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        const token = authHeader.split(' ')[1];
-        const decodedToken = await admin.auth().verifyIdToken(token);
-        const adminUser = await User.findOne({ firebaseUid: decodedToken.uid });
-        
-        if (!adminUser || (adminUser.role !== 'admin' && adminUser.role !== 'registration')) {
-            return NextResponse.json({ error: "Forbidden access" }, { status: 403 });
-        }
+export async function PATCH(request) {
+  try {
+    await dbConnect();
+    await requireRole(request, 'admin', 'registration');
 
-        const body = await req.json();
-        const { registrationCode, day, participantIds } = body;
+    const { registrationCode, day } = await request.json();
 
-        if (!registrationCode || !day) {
-            return NextResponse.json({ error: "Registration code and day are required" }, { status: 400 });
-        }
+    // 1. Find the user by their unique code
+    const user = await User.findOne({ registrationCode })
+      .populate('eventsRegistered')
+      .lean();
 
-        // 2. Find User by Code
-        const user = await User.findOne({ registrationCode: registrationCode.toUpperCase() });
-        if (!user) {
-            return NextResponse.json({ error: "Invalid registration code" }, { status: 404 });
-        }
-
-        // 3. Find their Registrations
-        const registrations = await EventRegistration.find({ userId: user._id });
-        if (!registrations || registrations.length === 0) {
-            return NextResponse.json({ error: "User has no registrations" }, { status: 404 });
-        }
-
-        // Check if any registration is verified
-        const isVerified = registrations.some(reg => reg.paymentStatus === 'verified');
-        if (!isVerified) {
-            return NextResponse.json({ error: "Payment not verified yet." }, { status: 400 });
-        }
-
-        const isDay2 = day === 2;
-        let updatePromises = [];
-
-        // 4. Update Logic (Group vs Single)
-        for (let reg of registrations) {
-            const isGroup = reg.registrationType === 'group5' || reg.registrationType === 'group10';
-
-            if (isGroup && participantIds && participantIds.length > 0) {
-                // Update specific participants inside the array
-                for (let pId of participantIds) {
-                    let updateField = isDay2 ? "participants.$.isPresentDay2" : "participants.$.isPresentDay1";
-                    
-                    updatePromises.push(
-                        EventRegistration.updateOne(
-                            { _id: reg._id, "participants._id": pId },
-                            { $set: { [updateField]: true } }
-                        )
-                    );
-                }
-            } else if (!isGroup) {
-                // Standard Single Entry Update
-                if (isDay2 && !reg.dayTwoAccess && !user.isSelectedDay2) {
-                    throw new Error("User is not authorized for Day 2.");
-                }
-                
-                reg.dayOneAttendance = !isDay2 ? true : reg.dayOneAttendance;
-                reg.dayTwoAttendance = isDay2 ? true : reg.dayTwoAttendance;
-                updatePromises.push(reg.save());
-            }
-        }
-
-        await Promise.all(updatePromises);
-
-        return NextResponse.json({ 
-            success: true, 
-            fullName: user.fullName,
-            message: `Attendance marked for Day ${day}`
-        }, { status: 200 });
-
-    } catch (error) {
-        console.error("Attendance API Error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!user) {
+      return NextResponse.json({ error: 'Participant not found.' }, { status: 404 });
     }
+
+    // 2. Must have at least one verified registration
+    const hasVerified = user.eventsRegistered.some(r => r.paymentStatus === 'verified');
+    if (!hasVerified) {
+      return NextResponse.json({ error: `${user.fullName} has no verified payments!` }, { status: 403 });
+    }
+
+    // 3. Day 2 requires dayTwoAccess
+    if (day === 2) {
+      const hasDay2Access = user.eventsRegistered.some(r => r.dayTwoAccess);
+      if (!hasDay2Access) {
+        return NextResponse.json({ error: `${user.fullName} is NOT authorized for Day 2.` }, { status: 403 });
+      }
+    }
+
+    // 4. Check if already marked
+    const attendanceField = day === 1 ? 'dayOneAttendance' : 'dayTwoAttendance';
+    const alreadyPresent = user.eventsRegistered.some(r => r[attendanceField]);
+    if (alreadyPresent) {
+      return NextResponse.json({ fullName: user.fullName, alreadyPresent: true }, { status: 200 });
+    }
+
+    // 5. Mark attendance on ALL their registrations (or just verified ones — your call)
+    await EventRegistration.updateMany(
+      { userId: user._id },
+      { $set: { [attendanceField]: true } }
+    );
+
+    return NextResponse.json({ fullName: user.fullName, alreadyPresent: false }, { status: 200 });
+
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
 }

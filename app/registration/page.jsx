@@ -157,18 +157,11 @@ const ContestRegistration = () => {
     const standardTotal = standardBasePerPerson * (regType === 'single' ? 1 : (regType === 'group5' ? 5 : 10));
 
     // Check if Participant 1 is from PEC
-    // --- PRICING LOGIC ---
-    // ... (keep standard base price calculations above this)
+    const pecPattern = /^(pec|punjab engineering college)[\s-]*\d+/i;
+    const leaderCollege = participants[0]?.college || '';
+    const isPecDiscountApplied = pecPattern.test(leaderCollege.trim());
 
-    // NEW PEC Student Verification Regex 
-    // Matches "PEC", "Punjab Engineering College", "Punjab Engineering College, Chandigarh", or "Punjab Engineering College(PEC), Chandigarh" followed by numbers
-    const pecPattern = /^(pec|punjab engineering college(\s*\(pec\))?(,\s*chandigarh)?)[\s-]*\d+/i;
-    
-    // Applying 28% off ONLY IF ALL participants are from PEC
-    const isPecDiscountApplied = participants.length > 0 && participants.every(p => {
-        return p.college.trim().length > 0 && pecPattern.test(p.college.trim());
-    });
-
+    // Applying 28% off if eligible
     const finalPrice = isPecDiscountApplied 
         ? Math.round(subtotal * 0.72) 
         : subtotal;
